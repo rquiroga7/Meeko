@@ -171,26 +171,36 @@ Comparison checks:
 4. **Atom types**: same aromaticity differences as ligands, plus residue-specific
    typing (e.g., `Nf` for backbone amide nitrogens, `Of` for backbone carbonyls)
 
-#### Expected Agreement
+#### Measured Agreement (1426-ligand validation)
 
-The comparison should show:
+The comparison shows:
 
-- **Atom types**: ~95%+ agreement for ligands, ~98%+ for receptors (receptors
-  have fewer exotic heterocycles)
-- **Aromaticity mismatches**: The primary source of atom type differences,
-  occurring in ring systems where RDKit and OpenBabel disagree on aromaticity
-  (e.g., purines, thiazoles, certain fused heterocycles)
-- **Hydrogen counts**: Potential differences due to distinct pH 7 models for
-  titratable groups
-- **Altloc differences**: Minimal impact when meeko defaults to altloc A,
-  but some systems may have residues with only altloc B (requiring manual
-  `--wanted_altloc`)
+| Metric | Value |
+|--------|-------|
+| **Overall atom type match rate** | **94.8%** |
+| Total atoms compared | 40,867 |
+| Type mismatches (expected) | 2,118 |
+| Ligands with errors (meeko failure) | 2 / 1426 |
 
-#### Running the Test
+- **Aromaticity mismatches** (top source, ~1044): `Np→Nu`, `Nr→Nu`, `Nq→Nu`,
+  `Ns→Ni` — aromatic nitrogen typing differences between RDKit and OpenBabel
+  in heterocycles (purines, thiazoles, sulfonamides)
+- **Phosphate oxygen typing** (~683): `Ob→Od`, `Ob→Oc` — differences in
+  phosphate/sulfate oxygen classification
+- **Hydrogen positioning**: RDKit and OpenBabel place polar hydrogens at
+  slightly different positions (~0.05 Å deviation), requiring separate
+  coordinate tolerance (0.01 Å for heavy atoms, 0.5 Å for hydrogens)
+- **Charges**: All atoms differ (meeko: Gasteiger charges; obabel: hardcoded
+  0.000) — expected by design
+
+#### Running the Tests
 
 ```bash
 # Point the runs-n-poses symlink to the ground truth dataset
 ln -sf /path/to/runs-n-poses-datasets/ground_truth runs-n-poses
+
+# Batch validation (1426 systems) using vinardo_inputs reference PDBTs:
+python test/test_pdbt_batch.py
 
 # Ligand comparison (example for one system)
 obabel -i sdf runs-n-poses/5s9z__1__1.A_1.B__1.R/ligand_files/1.R.sdf \
