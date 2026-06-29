@@ -120,3 +120,4 @@ to run molecular docking and virtual screening.
 
    pdbqt specification <pdbqt_spec>
    Flexible receptors pdbqt <flex_rec_pdbqt>
+   PDBT format <meeko_pdbt>

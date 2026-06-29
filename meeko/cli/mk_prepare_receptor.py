@@ -600,6 +600,9 @@ def main():
             sys.exit(2)
         mk_config["charge_atom_prop"] = "PQRCharge"
 
+    box_center = None
+    box_size = None
+
     # store box center and size in mk_prep (needed for --bad_res_radius)
     if args.delete_bad_res_from_box_radius is not None:
         if args.box_center is not None:

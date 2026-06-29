@@ -1612,7 +1612,7 @@ class RDKitMoleculeSetup(MoleculeSetup, MoleculeSetupExternalToolkit, BaseJSONPa
             warnings.warn(msg, RuntimeWarning)
         if len(Chem.GetMolFrags(mol)) != 1:
             raise ValueError(f"RDKit molecule has {len(Chem.GetMolFrags(mol))} fragments. Must have 1.")
-        if mol.HasQuery():
+        if hasattr(mol, 'HasQuery') and mol.HasQuery():
             raise ValueError(f"RDKit molecule has query. Check exotic fields (atom or bond) in SDF.")
 
         # Creating and populating the molecule setup with properties from RDKit as well as calculated values from our
