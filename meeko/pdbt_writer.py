@@ -277,3 +277,76 @@ class PDBTWriterLegacy:
 
         pdbt_string = "\n".join(buffer) + "\n"
         return pdbt_string, success, error_msg
+
+    @classmethod
+    def write_from_polymer(cls, polymer, bad_charge_ok=False):
+        """Write a Polymer (collection of monomers) as a single flat PDBT file.
+
+        The output mirrors what OpenBabel-25-07 produces for receptors: one
+        ROOT/ENDROOT containing all heavy atoms + HD hydrogens, no torsion
+        tree (TORSDOF 0). This is suitable for use as the rigid receptor
+        input in AutoDock-Vina and AutoDock-GPU.
+
+        Atoms marked ``is_ignore`` (e.g. non-polar Hs) and macrocycle glue
+        atoms (``is_pseudo_atom``) are skipped, matching the per-molsetup
+        behaviour of :meth:`write_string`.
+        """
+        # Validate every monomer's molsetup first
+        for res_id, monomer in polymer.get_valid_monomers().items():
+            ok, err = cls._is_molsetup_ok(monomer.molsetup, bad_charge_ok)
+            if not ok:
+                return "", False, f"residue {res_id}: {err}"
+
+        name = getattr(polymer, "name", None) or "receptor"
+        buffer = []
+        buffer.append("REMARK  Name = %s" % name)
+        buffer.append(
+            "REMARK                            x       y       z     vdW  Elec       q    Type"
+        )
+        buffer.append(
+            "REMARK                         _______ _______ _______ _____ _____    ______ ____"
+        )
+        buffer.append("ROOT")
+
+        serial = 0
+        for res_id, monomer in polymer.get_valid_monomers().items():
+            chain, resnum = res_id.split(":")
+            if resnum[-1].isalpha():
+                icode = resnum[-1]
+                resnum = int(resnum[:-1])
+            else:
+                icode = ""
+                resnum = int(resnum)
+            resname = monomer.input_resname
+            molsetup = monomer.molsetup
+            for atom_idx, atom in enumerate(molsetup.atoms):
+                if atom.is_ignore or atom.is_pseudo_atom:
+                    continue
+                if atom.atom_type is None:
+                    return "", False, (
+                        f"residue {res_id} atom {atom_idx} has None atom_type; "
+                        "call meeko.pdbt_atomtyper.assign_pdbt_types first"
+                    )
+                pdbinfo = molsetup.get_pdbinfo(atom_idx)
+                if pdbinfo is None:
+                    pdbinfo = pdbutils.PDBAtomInfo("", "", 0, "")
+                atom_name, _, _, _ = cls._get_pdbinfo_fitting_pdb_chars(pdbinfo)
+                if not atom_name.strip():
+                    atom_name = cls._generate_atom_name(molsetup, atom_idx)
+                serial += 1
+                buffer.append(cls._make_pdbt_line(
+                    serial,
+                    atom_name,
+                    resname,
+                    chain,
+                    resnum,
+                    molsetup.get_coord(atom_idx),
+                    molsetup.get_charge(atom_idx),
+                    atom.atom_type,
+                    icode,
+                ))
+
+        buffer.append("ENDROOT")
+        buffer.append("TORSDOF 0")
+
+        return "\n".join(buffer) + "\n", True, ""

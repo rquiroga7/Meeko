@@ -40,6 +40,7 @@ from .reactive import reactive_typer
 from .reactive import get_reactive_config
 from .writer import PDBQTWriterLegacy
 from .pdbt_writer import PDBTWriterLegacy
+from .pdbt_atomtyper import assign_pdbt_types_from_pdbinfo
 from . import analysis
 from .writer import oids_block_from_setup
 from .openff_xml_parser import parse_offxml

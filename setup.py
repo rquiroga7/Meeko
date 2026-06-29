@@ -55,7 +55,8 @@ setup(
             'mk_export.py=meeko.cli.mk_export:main',
             'mk_prepare_ligand.py=meeko.cli.mk_prepare_ligand:main',
             'mk_prepare_receptor.py=meeko.cli.mk_prepare_receptor:main',
-            'meeko-pdbt=meeko.cli.mk_prepare_pdbt_ligand:main'
+            'meeko-pdbt=meeko.cli.mk_prepare_pdbt_ligand:main',
+            'meeko-pdbt-rec=meeko.cli.mk_prepare_pdbt_receptor:main'
         ]
     }
 )

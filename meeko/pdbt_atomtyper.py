@@ -1,4 +1,5 @@
 from rdkit import Chem
+from .pdbt_writer import _ELEMENT_SYMBOLS
 
 _AMINOACID_RESIDUES = {
     "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY",
@@ -681,8 +682,132 @@ def get_pdbt_atom_type(atom, mol):
     return _get_default_type(atom)
 
 
+def _build_rdkit_mol_from_molsetup(molsetup):
+    """Build a minimal RDKit mol from a molsetup, skipping ignored and
+    pseudo atoms. Returns ``(mol, index_map)`` where ``index_map[molsetup_idx] = rdkit_idx``
+    (or ``None`` for skipped atoms). Used as a fallback for receptor
+    residues that are not in the hardcoded protein table.
+    """
+    rwmol = Chem.RWMol()
+    index_map = [None] * len(molsetup.atoms)
+    for i, atom in enumerate(molsetup.atoms):
+        if atom.is_ignore or atom.is_pseudo_atom:
+            continue
+        rdkit_atom = Chem.Atom(atom.atomic_num)
+        if atom.atomic_num in (7,):
+            # keep nitrogen neutral; formal-charge info isn't on molsetup atoms
+            pass
+        index_map[i] = rwmol.AddAtom(rdkit_atom)
+    # Add bonds. bond_info keys are (a, b) with a < b typically; iterate
+    # all and dedupe by canonical (min, max).
+    seen = set()
+    for bond_id in molsetup.bond_info:
+        a, b = bond_id
+        if a >= len(molsetup.atoms) or b >= len(molsetup.atoms):
+            continue
+        if index_map[a] is None or index_map[b] is None:
+            continue
+        key = (min(a, b), max(a, b))
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            rwmol.AddBond(index_map[a], index_map[b], Chem.BondType.SINGLE)
+        except Exception:
+            pass
+    try:
+        mol = rwmol.GetMol()
+        Chem.SanitizeMol(mol)
+        return mol, index_map
+    except Exception:
+        return None, index_map
+
+
+def _get_pdbt_type_from_molsetup(molsetup, atom_idx, res_name, _rdkit_cache={}):
+    """Determine the PDBT atom type for an atom in a molsetup using the
+    hardcoded protein table first, then a chemical-rules fallback for
+    non-standard residues.
+
+    For known amino-acid residues (and HIS variants) this is an O(1) dict
+    lookup keyed by ``(res_name, atom_name)``. For anything else, we build
+    a minimal RDKit mol from the molsetup's bond info and run the same
+    chemical analysis used for ligands. Intended for receptor residues
+    whose RDKit mol may not have monomer info attached.
+    """
+    atom = molsetup.atoms[atom_idx]
+    pdbinfo = molsetup.get_pdbinfo(atom_idx)
+    atom_name = pdbinfo.name.strip() if pdbinfo is not None and pdbinfo.name else ""
+    if _is_aminoacid_residue(res_name):
+        pdbt_type = _lookup_protein_pdbt_type(res_name, atom_name)
+        if pdbt_type is not None:
+            return pdbt_type
+    if atom.atomic_num == 1:
+        # Polar H (HD) is bonded to N/O/S; non-polar H (H) to C or anything else
+        is_polar = False
+        for bond_id in molsetup.bond_info:
+            a, b = bond_id
+            if a == atom_idx:
+                nbr_atomic = molsetup.atoms[b].atomic_num
+            elif b == atom_idx:
+                nbr_atomic = molsetup.atoms[a].atomic_num
+            else:
+                continue
+            if nbr_atomic in (7, 8, 16):
+                is_polar = True
+                break
+        return "HD" if is_polar else "H "
+    # Fallback: build a minimal RDKit mol once per molsetup and call
+    # the chemical rules. This handles non-standard residues like CME
+    # and HETATMs that the hardcoded table doesn't cover.
+    molsetup_id = id(molsetup)
+    rdkit_mol, index_map = _rdkit_cache.get(molsetup_id, (None, None))
+    if rdkit_mol is None:
+        rdkit_mol, index_map = _build_rdkit_mol_from_molsetup(molsetup)
+        _rdkit_cache[molsetup_id] = (rdkit_mol, index_map)
+    if rdkit_mol is not None and index_map[atom_idx] is not None:
+        try:
+            rdkit_atom = rdkit_mol.GetAtomWithIdx(index_map[atom_idx])
+            return get_pdbt_atom_type(rdkit_atom, rdkit_mol)
+        except Exception:
+            pass
+    # Last resort: element symbol
+    symbol = _ELEMENT_SYMBOLS.get(atom.atomic_num)
+    if symbol is None:
+        try:
+            symbol = Chem.Atom(atom.atomic_num).GetSymbol()
+        except Exception:
+            symbol = "X"
+    return symbol.strip() + " " if len(symbol) == 1 else symbol
+
+
+def assign_pdbt_types_from_pdbinfo(polymer):
+    """Assign PDBT atom types to every monomer in a polymer using the
+    hardcoded lookup table, with a chemical-rules fallback for atoms
+    outside the table. No RDKit mol is required.
+
+    Useful for receptors where the RDKit mol has no monomer info and
+    the chemical-rules path would otherwise fall through to the
+    element-only default.
+    """
+    for res_id, monomer in polymer.get_valid_monomers().items():
+        molsetup = monomer.molsetup
+        res_name = monomer.input_resname
+        for atom_idx, atom in enumerate(molsetup.atoms):
+            if atom.is_ignore or atom.is_pseudo_atom:
+                continue
+            molsetup.set_atom_type(
+                atom_idx, _get_pdbt_type_from_molsetup(molsetup, atom_idx, res_name)
+            )
+
+
 def assign_pdbt_types(molsetup, mol):
+    nr_mol_atoms = mol.GetNumAtoms()
     for atom_idx in range(molsetup.true_atom_count):
+        # molsetup may include atoms not present in the RDKit mol
+        # (e.g. extra hydrogens added during molsetup construction).
+        # Skip indices that don't have a corresponding RDKit atom.
+        if atom_idx >= nr_mol_atoms:
+            continue
         atom = mol.GetAtomWithIdx(atom_idx)
         pdbt_type = get_pdbt_atom_type(atom, mol)
         molsetup.set_atom_type(atom_idx, pdbt_type)
