@@ -177,20 +177,22 @@ The comparison shows:
 
 | Metric | Value |
 |--------|-------|
-| **Overall atom type match rate** | **95.8%** |
+| **Overall atom type match rate** | **96.4%** |
 | Total atoms compared | 40,867 |
-| Type mismatches (expected) | 1,733 |
+| Type mismatches (expected) | 1,478 |
 | Ligands with errors (meeko failure) | 2 / 1426 |
 
 - **Aromaticity mismatches** (top source, ~1044): `Np→Nu`, `Nr→Nu`, `Nq→Nu`,
   `Ns→Ni` — aromatic nitrogen typing differences between RDKit and OpenBabel
   in heterocycles (purines, thiazoles, sulfonamides)
-- **Carboxylate oxygen typing** (~261): `Ob→Oc` — RDKit's H-bond donor
-  detection flags carboxylic-acid O-H as donor+acceptor, obabel does not
-- **Phosphate oxygen typing** (~30 residual): `Ob→Oj` (sulfate-like O in
-  phosphate), `Ob→Of`/`Ob→Om` (residual cases). 389 originally
-  `Ob→Od` P-O-H cases were fixed by special-casing `_is_phosphate_oxygen()`
-  inside the donor+acceptor branch
+- **SDF→SER misinterpretation** (~30): `Ob→Of`, `Ob→Oj`, `Ob→Om` etc. — for
+  some ligands, obabel-25-07's PDBT output misclassifies the first N atom of
+  the SDF as a SER backbone N and then reinterprets nearby O atoms as SER
+  backbone atoms, adding ~6 synthetic SER atoms. meeko correctly labels them
+  as ligand atoms. This is a reference-side artifact, not a meeko bug.
+- **Residual H-bond donor inconsistency** (~10): a few `Od→Ob` and `Oc→Ob`
+  cases where obabel inconsistently considers P-O-H or R-CO-O-H as a donor.
+  Both directions are now treated consistently by meeko.
 - **Hydrogen positioning**: RDKit and OpenBabel place polar hydrogens at
   slightly different positions (~0.05 Å deviation), requiring separate
   coordinate tolerance (0.01 Å for heavy atoms, 0.5 Å for hydrogens)

@@ -534,6 +534,8 @@ def _type_oxygen(atom, mol):
     if _is_hbond_donor(atom) and _is_hbond_acceptor(atom):
         if _is_phosphate_oxygen(atom):
             return "Od"
+        if _is_carboxyl_oxygen(atom):
+            return "Oc"
         if _is_phenol_oxygen(atom):
             return "Oa"
         else:
