@@ -7,6 +7,68 @@ _AMINOACID_RESIDUES = {
     "XAA", "ASX", "XLE", "GLX", "CYX", "SEC", "PYL",
 }
 
+# Hardcoded PDBT atom types for standard protein residues, matching OpenBabel-25-07.
+# Backbone atoms (C, N, O, OXT) apply to all residues; CA uses GLY vs non-GLY rules.
+# Atoms not found here fall through to chemical-environment typing.
+_PROTEIN_BACKBONE = {
+    "C": "A1",
+    "N": "Nf",
+    "O": "Of",
+    "OXT": "Oc",
+}
+
+# Sidechain atoms per residue, extracted from openbabel-25-07/src/formats/pdbtformat.cpp:1408-1586
+# HIS variants:
+#   HIS  → ND1=Np (acceptor), NE2=Nb (donor)
+#   HID  → ND1=Nb (donor),    NE2=Np (acceptor)
+#   HIE  → ND1=Nb (donor),    NE2=Nb (donor)
+#   HIP  → ND1=Nb (donor),    NE2=Nb (donor)
+_PROTEIN_ATOM_TYPES = {
+    "ALA": {"CB": "C3"},
+    "ARG": {"CB": "C2", "CG": "C2", "CD": "C2", "NE": "Nb", "CZ": "C1", "NH1": "Na", "NH2": "Na"},
+    "ASN": {"CB": "C2", "CG": "A1", "OD1": "Of", "ND2": "Nf"},
+    "ASP": {"CB": "C2", "CG": "A1", "OD1": "Oc", "OD2": "Oc"},
+    "CYS": {"CB": "C2", "SG": "S1"},
+    "GLN": {"CB": "C2", "CG": "C2", "CD": "A1", "OE1": "Of", "NE2": "Nf"},
+    "GLU": {"CB": "C2", "CG": "C2", "CD": "A1", "OE1": "Oc", "OE2": "Oc"},
+    "HIS": {"CB": "C2", "CG": "A0", "CD2": "A0", "CE1": "A0", "ND1": "Np", "NE2": "Nb"},
+    "HID": {"CB": "C2", "CG": "A0", "CD2": "A0", "CE1": "A0", "ND1": "Nb", "NE2": "Np"},
+    "HIE": {"CB": "C2", "CG": "A0", "CD2": "A0", "CE1": "A0", "ND1": "Nb", "NE2": "Nb"},
+    "HIP": {"CB": "C2", "CG": "A0", "CD2": "A0", "CE1": "A0", "ND1": "Nb", "NE2": "Nb"},
+    "ILE": {"CB": "C1", "CG1": "C2", "CG2": "C3", "CD1": "C3"},
+    "LEU": {"CB": "C2", "CG": "C1", "CD1": "C3", "CD2": "C3"},
+    "LYS": {"CB": "C2", "CG": "C2", "CD": "C2", "CE": "C2", "NZ": "Ni"},
+    "MET": {"CB": "C2", "CG": "C2", "SD": "S3", "CE": "C3"},
+    "PHE": {"CB": "C2", "CG": "A0", "CD1": "A0", "CD2": "A0", "CE1": "A0", "CE2": "A0", "CZ": "A0"},
+    "PRO": {"CB": "C2", "CG": "C2", "CD": "C2"},
+    "SER": {"CB": "C2", "OG": "Ob"},
+    "THR": {"CB": "C1", "OG1": "Ob", "CG2": "C3"},
+    "TRP": {"CB": "C2", "CG": "A0", "CD1": "A0", "CD2": "A0", "CE2": "A0", "CE3": "A0", "CZ2": "A0", "CZ3": "A0", "CH2": "A0", "NE1": "Nb"},
+    "TYR": {"CB": "C2", "CG": "A0", "CD1": "A0", "CD2": "A0", "CE1": "A0", "CE2": "A0", "CZ": "A0", "OH": "Oa"},
+    "VAL": {"CB": "C1", "CG1": "C3", "CG2": "C3"},
+}
+
+
+def _lookup_protein_pdbt_type(res_name, atom_name):
+    """Look up hardcoded PDBT atom type for a standard amino-acid atom.
+
+    Returns None if no hardcoded type exists (fall through to chemical rules).
+    """
+    res_upper = res_name.upper()[:3]
+    atom_clean = atom_name.strip()
+
+    if atom_clean in _PROTEIN_BACKBONE:
+        return _PROTEIN_BACKBONE[atom_clean]
+
+    if atom_clean == "CA":
+        return "C2" if res_upper == "GLY" else "C1"
+
+    res_table = _PROTEIN_ATOM_TYPES.get(res_upper)
+    if res_table is not None:
+        return res_table.get(atom_clean)
+
+    return None
+
 
 def _hvy_degree(atom):
     return sum(1 for n in atom.GetNeighbors() if n.GetAtomicNum() != 1)
@@ -470,6 +532,8 @@ def _type_carbon(atom, mol):
 
 def _type_oxygen(atom, mol):
     if _is_hbond_donor(atom) and _is_hbond_acceptor(atom):
+        if _is_phosphate_oxygen(atom):
+            return "Od"
         if _is_phenol_oxygen(atom):
             return "Oa"
         else:
@@ -581,6 +645,15 @@ def _get_default_type(atom):
 
 
 def get_pdbt_atom_type(atom, mol):
+    # Fast hardcoded lookup for known protein residues (avoids chemical analysis)
+    pdb_info = atom.GetMonomerInfo()
+    if pdb_info is not None and hasattr(pdb_info, "GetResidueName"):
+        res_name = pdb_info.GetResidueName()
+        atom_name = pdb_info.GetName()
+        if _is_aminoacid_residue(res_name):
+            pdbt_type = _lookup_protein_pdbt_type(res_name, atom_name)
+            if pdbt_type is not None:
+                return pdbt_type
     atomic_num = atom.GetAtomicNum()
     if atomic_num == 1:
         return "HD"

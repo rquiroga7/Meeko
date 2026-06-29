@@ -177,16 +177,20 @@ The comparison shows:
 
 | Metric | Value |
 |--------|-------|
-| **Overall atom type match rate** | **94.8%** |
+| **Overall atom type match rate** | **95.8%** |
 | Total atoms compared | 40,867 |
-| Type mismatches (expected) | 2,118 |
+| Type mismatches (expected) | 1,733 |
 | Ligands with errors (meeko failure) | 2 / 1426 |
 
 - **Aromaticity mismatches** (top source, ~1044): `Np→Nu`, `Nr→Nu`, `Nq→Nu`,
   `Ns→Ni` — aromatic nitrogen typing differences between RDKit and OpenBabel
   in heterocycles (purines, thiazoles, sulfonamides)
-- **Phosphate oxygen typing** (~683): `Ob→Od`, `Ob→Oc` — differences in
-  phosphate/sulfate oxygen classification
+- **Carboxylate oxygen typing** (~261): `Ob→Oc` — RDKit's H-bond donor
+  detection flags carboxylic-acid O-H as donor+acceptor, obabel does not
+- **Phosphate oxygen typing** (~30 residual): `Ob→Oj` (sulfate-like O in
+  phosphate), `Ob→Of`/`Ob→Om` (residual cases). 389 originally
+  `Ob→Od` P-O-H cases were fixed by special-casing `_is_phosphate_oxygen()`
+  inside the donor+acceptor branch
 - **Hydrogen positioning**: RDKit and OpenBabel place polar hydrogens at
   slightly different positions (~0.05 Å deviation), requiring separate
   coordinate tolerance (0.01 Å for heavy atoms, 0.5 Å for hydrogens)
