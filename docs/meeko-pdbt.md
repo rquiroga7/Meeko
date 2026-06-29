@@ -12,6 +12,136 @@ The PDBT format is used by AutoDock-family docking tools and includes:
 - ATOM lines with coordinates, partial charges, and two-letter Vinardo2 atom types
 - TORSDOF footer with total torsional degrees of freedom
 
+## Quickstart
+
+### Command line: prepare a PDBT ligand from an SDF
+
+The `meeko-pdbt` command is installed automatically with Meeko. It accepts
+the same arguments as `mk_prepare_ligand.py` (it is a thin wrapper that
+adds the PDBT writer), so any option that works for the PDBQT ligand
+preparation also works here.
+
+```bash
+# Print the help
+meeko-pdbt -h
+
+# Write a PDBT file (extension defaults to .pdbt)
+meeko-pdbt -i ligand.sdf -o ligand.pdbt
+
+# Or to stdout (useful for piping into docking tools)
+meeko-pdbt -i ligand.sdf -o - > ligand.pdbt
+```
+
+The input SDF must contain 3D coordinates and explicit hydrogens (or
+none, in which case RDKit's `AddHs` is called). For best results, match
+obabel's `-p7` protonation model by pre-titrating the ligand with your
+cheminformatics toolkit of choice.
+
+### Python API: write a PDBT string
+
+For finer control (e.g. to embed the PDBT string directly into another
+Python pipeline, or to add custom atom typing), use the Python API.
+`PDBTWriterLegacy` is exported from the top-level `meeko` package:
+
+```python
+from rdkit import Chem
+from rdkit.Chem import AllChem
+from meeko import MoleculePreparation
+from meeko import PDBTWriterLegacy
+from meeko.pdbt_atomtyper import assign_pdbt_types
+
+# Build and embed a 3D molecule with explicit Hs
+mol = Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")  # aspirin
+mol = Chem.AddHs(mol)
+AllChem.EmbedMolecule(mol)
+AllChem.MMFFOptimizeMolecule(mol)
+
+# Prepare (same as for PDBQT)
+preparator = MoleculePreparation()
+molsetups = preparator.prepare(mol)
+molsetup = molsetups[0]
+
+# Assign Vinardo2 / PDBT atom types
+assign_pdbt_types(molsetup, mol)
+
+# Write the PDBT string
+pdbt_string, success, error_msg = PDBTWriterLegacy.write_string(molsetup)
+if not success:
+    raise RuntimeError(error_msg)
+
+with open("aspirin.pdbt", "w") as f:
+    f.write(pdbt_string)
+```
+
+The `assign_pdbt_types` step is essential: without it the molsetup
+still holds AD4 types (e.g. `A`, `C`, `OA`) and the writer will refuse
+to emit a PDBT line.
+
+### Command-line help
+
+```
+usage: mk_prepare_pdbt_ligand.py [-h] [-v] -i INPUT_MOLECULE_FILENAME
+                                 [-o OUTPUT_PDBT_FILENAME] [-]
+                                 [-c CONFIG_FILE] [--rigid_macrocycles]
+                                 [--keep_chorded_rings]
+                                 [--keep_equivalent_rings]
+                                 [--min_ring_size MIN_RING_SIZE]
+                                 [-r SMARTS] [-b i j [i j ...]] [-a]
+                                 [--double_bond_penalty DOUBLE_BOND_PENALTY]
+                                 [--charge_model {gasteiger,zero,read}]
+                                 [--charge_atom_prop CHARGE_ATOM_PROP]
+                                 [--bad_charge_ok] [--rename_atoms]
+
+options:
+  -h, --help            show this help message and exit
+  -v, --verbose         print information about molecule setup
+
+Input/Output:
+  -i INPUT_MOLECULE_FILENAME, --mol INPUT_MOLECULE_FILENAME
+                        molecule file (MOL2, SDF, ...)
+  -o OUTPUT_PDBT_FILENAME, --out OUTPUT_PDBT_FILENAME
+                        output pdbt filename. Single molecule input only.
+  -, --                 do not write file, redirect output to STDOUT.
+
+Molecule preparation:
+  -c CONFIG_FILE, --config_file CONFIG_FILE
+                        configure MoleculePreparation from JSON file.
+  --rigid_macrocycles   keep macrocycles rigid in input conformation
+  --keep_chorded_rings  return all rings from exhaustive perception
+  --keep_equivalent_rings
+                        equivalent rings have the same size and neighbors
+  --min_ring_size MIN_RING_SIZE
+                        min nr of atoms in ring for opening
+  -r SMARTS, --rigidify_bonds_smarts SMARTS
+                        SMARTS patterns to rigidify bonds
+  -b i j [i j ...], --rigidify_bonds_indices i j [i j ...]
+                        indices of two atoms (in the SMARTS) that define a
+                        bond (start at 1)
+  -a, --flexible_amides
+                        allow amide bonds to rotate and be non-planar, which
+                        is bad
+  --double_bond_penalty DOUBLE_BOND_PENALTY
+                        penalty > 100 prevents breaking double bonds
+  --charge_model {gasteiger,zero,read}
+                        default is 'gasteiger', 'zero' sets all zeros
+  --charge_atom_prop CHARGE_ATOM_PROP
+                        set atom partial charges from an RDKit atom property
+                        based on the input file.
+  --bad_charge_ok       NaN and Inf charges allowed in PDBT
+  --rename_atoms        rename atoms: new name is original name + (1-based)
+                        index
+```
+
+### Receptor PDBT output
+
+The `meeko-pdbt` CLI currently only handles ligands. To write a receptor
+PDBT, use `PDBTWriterLegacy` directly on each monomer's molsetup, or
+call `assign_pdbt_types` per residue and concatenate the strings. The
+obabel reference receptors in the `runs-n-poses/vinardo_inputs/receptors/<system>/`
+dataset are flat ATOM/HETATM lists (no torsions), one file per receptor,
+and so `PDBTWriterLegacy.write_string` produces the correct shape when
+invoked on a single combined molsetup.
+
 ## Implementation
 
 ### Files Created/Modified
@@ -81,19 +211,6 @@ them to the same type classes used by OpenBabel.
 
 4. **Atom names**: When PDB info is not available, atom names are auto-generated from
    element symbols.
-
-### CLI Usage
-
-```bash
-# Basic usage (output to stdout):
-meeko-pdbt -i input.sdf -
-
-# Output to file:
-meeko-pdbt -i input.sdf -o output.pdbt
-
-# With explicit hydrogens (required):
-meeko-pdbt -i input_with_Hs.sdf -o output.pdbt
-```
 
 ## Testing
 
