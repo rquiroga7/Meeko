@@ -143,14 +143,111 @@ Command-line help
 Receptor PDBT output
 ^^^^^^^^^^^^^^^^^^^^
 
-The :command:`meeko-pdbt` CLI currently only handles ligands. To write
-a receptor PDBT, use the :class:`PDBTWriterLegacy` directly on each
-monomer's molsetup, or call :func:`assign_pdbt_types` per residue and
-concatenate the strings. The obabel reference receptors in the
-``runs-n-poses/vinardo_inputs/receptors/<system>/`` dataset are flat
-ATOM/HETATM lists (no torsions), one file per receptor, and so
-:func:`PDBTWriterLegacy.write_string` produces the correct shape when
-invoked on a single combined molsetup.
+The :command:`meeko-pdbt-rec` CLI writes a receptor PDBT from a PDB or
+mmCIF file. Like the ligand CLI, it is intentionally simple: no
+flexres, no reactive residues, no GPF/box output. It exists
+independently from :command:`mk_prepare_receptor.py` (which only
+emits PDBQT).
+
+Command line: prepare a PDBT receptor from a PDB file
++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.. code-block:: bash
+
+   # Write a receptor PDBT (extension defaults to .pdbt)
+   meeko-pdbt-rec -i receptor.pdb -o receptor.pdbt
+
+   # Read mmCIF (requires ProDy) and write to stdout
+   meeko-pdbt-rec -i receptor.cif -o -
+
+   # Handle alternate locations, delete bad residues, etc.
+   meeko-pdbt-rec -i receptor.pdb -o receptor.pdbt \
+       --default_altloc A -x
+
+Command-line help
++++++++++++++++++
+
+.. code-block:: text
+
+   usage: mk_prepare_pdbt_receptor.py [-h] -i INPUT_FILENAME
+                                       [-o OUTPUT_FILENAME] [-]
+                                       [--default_altloc DEFAULT_ALTLOC]
+                                       [--wanted_altloc WANTED_ALTLOC]
+                                       [-n SET_TEMPLATE]
+                                       [-d DELETE_RESIDUES]
+                                       [-b BLUNT_ENDS]
+                                       [--config_file CONFIG_FILE]
+                                       [--add_templates ADD_TEMPLATES]
+                                       [-x] [--forgive_extra_bonds]
+                                       [--bad_charge_ok]
+
+   Input/Output:
+     -i INPUT_FILENAME, --input INPUT_FILENAME
+                           receptor file (PDB or mmCIF; mmCIF requires ProDy)
+     -o OUTPUT_FILENAME, --output OUTPUT_FILENAME
+                           output PDBT filename. Default: <input>.pdbt.
+                           Use '-' for stdout.
+     -, --stdout           do not write file, redirect output to STDOUT
+
+   Receptor perception:
+     --default_altloc DEFAULT_ALTLOC
+                           default alternate location (e.g. 'A')
+     --wanted_altloc WANTED_ALTLOC
+                           require altloc for specific residues,
+                           e.g. :5=B,B:17=A
+     -n SET_TEMPLATE, --set_template SET_TEMPLATE
+                           override residue template, e.g. A:5,7=CYX
+     -d DELETE_RESIDUES, --delete_residues DELETE_RESIDUES
+                           delete residues by chain:number,
+                           e.g. A:350,B:15,16,17
+     -b BLUNT_ENDS, --blunt_ends BLUNT_ENDS
+                           mark chain ends as blunt, e.g. A:123=2,A:1=0
+     --config_file CONFIG_FILE
+                           JSON file with extra MoleculePreparation
+                           settings
+     --add_templates ADD_TEMPLATES
+                           additional residue template (JSON file or
+                           'resname:file.sdf'); repeatable
+     -x, --delete_bad_res   delete residues that don't match templates
+                            instead of raising
+     --forgive_extra_bonds  allow processing structures with excess
+                            bonds (use with care)
+     --bad_charge_ok        allow NaN/Inf charges in the output
+
+Python API: write a receptor PDBT
++++++++++++++++++++++++++++++++++
+
+.. code-block:: python
+
+   from meeko import MoleculePreparation, Polymer, ResidueChemTemplates
+   from meeko import PDBTWriterLegacy
+   from meeko.pdbt_atomtyper import assign_pdbt_types_from_pdbinfo
+
+   # Read a receptor PDB
+   with open("receptor.pdb") as f:
+       pdb_string = f.read()
+
+   # Build the polymer
+   templates = ResidueChemTemplates.create_from_defaults()
+   mk_prep = MoleculePreparation()
+   polymer = Polymer.from_pdb_string(pdb_string, templates, mk_prep)
+
+   # Assign PDBT types using the hardcoded protein lookup
+   # (with chemical-rules fallback for non-standard residues)
+   assign_pdbt_types_from_pdbinfo(polymer)
+
+   # Write a single flat receptor PDBT
+   pdbt_string, success, error_msg = PDBTWriterLegacy.write_from_polymer(polymer)
+   if not success:
+       raise RuntimeError(error_msg)
+
+   with open("receptor.pdbt", "w") as f:
+       f.write(pdbt_string)
+
+The output mirrors what OpenBabel-25-07 produces for receptors: one
+``ROOT/ENDROOT`` containing all heavy atoms + HD hydrogens, no torsion
+tree (``TORSDOF 0``). Atoms marked ``is_ignore`` (e.g. non-polar Hs)
+and macrocycle glue atoms (``is_pseudo_atom``) are skipped.
 
 Implementation
 --------------
@@ -444,18 +541,21 @@ Running the Test
    # Batch validation (1426 systems) using vinardo_inputs reference PDBTs:
    python test/test_pdbt_batch.py
 
+   # Receptor comparison (20 systems with pre-computed references):
+   python test/test_pdbt_receptor_compare.py
+
    # Ligand comparison (example for one system)
    obabel -i sdf runs-n-poses/5s9z__1__1.A_1.B__1.R/ligand_files/1.R.sdf \
           -o pdbt -p7 -O obabel_ligand.pdbt
    meeko-pdbt -i runs-n-poses/5s9z__1__1.A_1.B__1.R/ligand_files/1.R.sdf \
               -o meeko_ligand.pdbt
 
+   # Receptor CLI usage:
+   meeko-pdbt-rec -i receptor.pdb -o receptor.pdbt
+
    # Receptor comparison (example for one system, using CIF)
    obabel -i cif runs-n-poses/5s9z__1__1.A_1.B__1.R/receptor.cif \
           -o pdbt -p7 -xr -O obabel_receptor.pdbt
-   mk_prepare_receptor --read_with_prody \
-       runs-n-poses/5s9z__1__1.A_1.B__1.R/receptor.cif \
-       --default_altloc A --write_pdb meeko_receptor_prepped.pdb
 
    # For systems with altloc variants, specify per-residue:
    mk_prepare_receptor --read_with_prody \
@@ -478,3 +578,39 @@ Caveats
 3. **Aromaticity**: RDKit and OpenBabel may perceive aromaticity differently
    in edge cases (e.g., purine ring systems), leading to different atom types
    for a small fraction of atoms.
+
+Receptor Validation
+~~~~~~~~~~~~~~~~~~~~
+
+The ``meeko-pdbt-rec`` CLI is validated against the obabel-25-07 reference
+receptors in ``runs-n-poses/vinardo_inputs/receptors/<system>/``. The
+20 systems that ship with pre-computed references all match at 100%
+or 99.8%:
+
+.. list-table::
+   :header-rows: 1
+
+   * - System
+     - Match rate
+   * - 5s9y, 5sau, 5sav, 5saw, 5sb2, 5s9z
+     - 100.0% (exact match)
+   * - 5sdh
+     - 100.0% (10843 atoms)
+   * - 5sdu, 5sdy, 5se0, 5se2, 5se3, 5se5, 5se6, 5se8, 5se9, 5sea, 5seb, 5sec, 5see
+     - 99.8% (4–5 mismatches per system)
+   * - **Overall (20 systems, 65037 atoms)**
+     - **99.9%**
+
+Residue atom types come from a hardcoded lookup table (O(1) dict
+access) matching the 20 standard amino acids and HIS variants
+(HIS, HID, HIE, HIP) from obabel-25-07's ``pdbtformat.cpp``. For
+non-standard residues or HETATMs, the chemical-rules path is used as
+a fallback.
+
+Run the validation with::
+
+   python test/test_pdbt_receptor_compare.py
+
+Or test a specific system::
+
+   python test/test_pdbt_receptor_compare.py --system 5s9y__1__1.A__1.K

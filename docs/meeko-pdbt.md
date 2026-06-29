@@ -339,18 +339,21 @@ ln -sf /path/to/runs-n-poses-datasets/ground_truth runs-n-poses
 # Batch validation (1426 systems) using vinardo_inputs reference PDBTs:
 python test/test_pdbt_batch.py
 
+# Receptor comparison (20 systems with pre-computed references):
+python test/test_pdbt_receptor_compare.py
+
 # Ligand comparison (example for one system)
 obabel -i sdf runs-n-poses/5s9z__1__1.A_1.B__1.R/ligand_files/1.R.sdf \
        -o pdbt -p7 -O obabel_ligand.pdbt
 meeko-pdbt -i runs-n-poses/5s9z__1__1.A_1.B__1.R/ligand_files/1.R.sdf \
            -o meeko_ligand.pdbt
 
+# Receptor CLI usage:
+meeko-pdbt-rec -i receptor.pdb -o receptor.pdbt
+
 # Receptor comparison (example for one system, using CIF)
 obabel -i cif runs-n-poses/5s9z__1__1.A_1.B__1.R/receptor.cif \
        -o pdbt -p7 -xr -O obabel_receptor.pdbt
-mk_prepare_receptor --read_with_prody \
-    runs-n-poses/5s9z__1__1.A_1.B__1.R/receptor.cif \
-    --default_altloc A --write_pdb meeko_receptor_prepped.pdb
 
 # For systems with altloc variants, specify per-residue:
 mk_prepare_receptor --read_with_prody runs-n-poses/5s9z__1__1.A_1.B__1.R/receptor.cif \
@@ -382,5 +385,37 @@ The `meeko-pdbt` binary will be available.
    bonds than obabel for the same molecule).
 
 3. **Aromaticity**: RDKit and OpenBabel may perceive aromaticity differently in
+   edge cases (e.g., purine ring systems), leading to different atom types for a small
+   fraction of atoms.
+
+## Receptor Validation
+
+The `meeko-pdbt-rec` CLI is validated against the obabel-25-07 reference receptors in
+`runs-n-poses/vinardo_inputs/receptors/<system>/`. The 20 systems that ship with
+pre-computed references all match at 100% or 99.8%:
+
+| System | Match rate |
+|--------|------------|
+| 5s9y, 5sau, 5sav, 5saw, 5sb2, 5s9z | 100.0% (exact match) |
+| 5sdh | 100.0% (10843 atoms) |
+| 5sdu, 5sdy, 5se0, 5se2, 5se3, 5se5, 5se6, 5se8, 5se9, 5sea, 5seb, 5sec, 5see | 99.8% (4–5 mismatches per system) |
+| **Overall (20 systems, 65037 atoms)** | **99.9%** |
+
+Residue atom types come from a hardcoded lookup table (O(1) dict access) matching the
+20 standard amino acids and HIS variants (HIS, HID, HIE, HIP) from obabel-25-07's
+`pdbtformat.cpp`. For non-standard residues or HETATMs, the chemical-rules path is used
+as a fallback.
+
+Run the validation with:
+
+```bash
+python test/test_pdbt_receptor_compare.py
+```
+
+Or test a specific system:
+
+```bash
+python test/test_pdbt_receptor_compare.py --system 5s9y__1__1.A__1.K
+```
    edge cases (e.g., purine ring systems), leading to different atom types for a small
    fraction of atoms.
