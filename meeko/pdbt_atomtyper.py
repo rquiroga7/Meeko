@@ -536,6 +536,12 @@ def _type_oxygen(atom, mol):
             return "Od"
         if _is_carboxyl_oxygen(atom):
             return "Oc"
+        if _is_sulfate_oxygen(atom):
+            return "Oj"
+        if _is_nitro_oxygen(atom):
+            return "Ok"
+        if _is_sulfonamide_oxygen(atom):
+            return "Ol"
         if _is_phenol_oxygen(atom):
             return "Oa"
         else:

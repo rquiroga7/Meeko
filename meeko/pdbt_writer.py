@@ -141,6 +141,8 @@ class PDBTWriterLegacy:
         for member in members:
             if setup.get_is_ignore(member):
                 continue
+            if setup.atoms[member].is_pseudo_atom:
+                continue
             data["atoms"].append(member)
             data["entries"].append({"type": "ATOM", "pos": len(data["atoms"]) - 1})
 
@@ -154,6 +156,8 @@ class PDBTWriterLegacy:
                 continue
             begin_idx, next_idx = setup.flexibility_model["rigid_body_connectivity"][node, neigh]
             if setup.get_is_ignore(begin_idx) or setup.get_is_ignore(next_idx):
+                continue
+            if setup.atoms[begin_idx].is_pseudo_atom or setup.atoms[next_idx].is_pseudo_atom:
                 continue
 
             branch_start_pos = len(data["atoms"])
