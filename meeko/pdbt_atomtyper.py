@@ -576,7 +576,7 @@ def _type_sulfur(atom, mol):
 def _get_default_type(atom):
     symbol = atom.GetSymbol()
     if len(symbol) >= 2:
-        return symbol[0].upper() + symbol[1].upper()
+        return symbol[0].upper() + symbol[1].lower()
     return symbol + " "
 
 
