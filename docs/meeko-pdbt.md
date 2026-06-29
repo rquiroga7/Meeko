@@ -177,22 +177,27 @@ The comparison shows:
 
 | Metric | Value |
 |--------|-------|
-| **Overall atom type match rate** | **96.4%** |
+| **Overall atom type match rate** | **96.6%** |
 | Total atoms compared | 40,867 |
-| Type mismatches (expected) | 1,478 |
+| Type mismatches (expected) | 1,405 |
 | Ligands with errors (meeko failure) | 2 / 1426 |
 
-- **Aromaticity mismatches** (top source, ~1044): `Np→Nu`, `Nr→Nu`, `Nq→Nu`,
-  `Ns→Ni` — aromatic nitrogen typing differences between RDKit and OpenBabel
-  in heterocycles (purines, thiazoles, sulfonamides)
-- **SDF→SER misinterpretation** (~30): `Ob→Of`, `Ob→Oj`, `Ob→Om` etc. — for
-  some ligands, obabel-25-07's PDBT output misclassifies the first N atom of
-  the SDF as a SER backbone N and then reinterprets nearby O atoms as SER
-  backbone atoms, adding ~6 synthetic SER atoms. meeko correctly labels them
-  as ligand atoms. This is a reference-side artifact, not a meeko bug.
-- **Residual H-bond donor inconsistency** (~10): a few `Od→Ob` and `Oc→Ob`
-  cases where obabel inconsistently considers P-O-H or R-CO-O-H as a donor.
-  Both directions are now treated consistently by meeko.
+- **Aromaticity / H-bond perception differences** (top source, ~1220):
+  `Np→Nu`, `Nr→Nu`, `Nq→Nu`, `Ns→Ni`, `Ni→Nf` — RDKit and OpenBabel differ
+  on whether a non-donor aromatic N is an H-bond acceptor (obabel is more
+  restrictive, calling them `Nu`).
+- **Ester/amide detection differences** (~115): `Og→Oh`, `Of→Oh`, `Oc→Of` —
+  the C-O-C(=O) ester and C-N-C(=O) amide patterns are detected slightly
+  differently between the two toolkits.
+- **SDF→SER misinterpretation** (~30): for some ligands, obabel-25-07's
+  PDBT output misclassifies the first N of the SDF as a SER backbone N,
+  then re-labels nearby O atoms as SER backbone atoms and adds ~6
+  synthetic SER atoms. meeko correctly treats them as ligand atoms. This
+  is a reference-side artifact, not a meeko bug.
+- **Obabel inconsistencies** (a handful): obabel is sometimes
+  inconsistent with its own H-bond donor detection (e.g. P-O-H
+  sometimes considered a donor, sometimes not), and gives `S1` to
+  S atoms with no H neighbor (S2 in meeko).
 - **Hydrogen positioning**: RDKit and OpenBabel place polar hydrogens at
   slightly different positions (~0.05 Å deviation), requiring separate
   coordinate tolerance (0.01 Å for heavy atoms, 0.5 Å for hydrogens)
