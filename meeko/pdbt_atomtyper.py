@@ -130,6 +130,11 @@ def _is_hbond_acceptor(atom):
     if num == 7:
         if atom.GetFormalCharge() > 0:
             return False
+        # Match OpenBabel-25-07: an sp2 N with 3 valences (e.g. pyrrole N1,
+        # imidazole N1, amide N) is not an H-bond acceptor because its lone
+        # pair is in the pi system. See openbabel-25-07/src/atom.cpp:1867-1871.
+        if atom.GetDegree() == 3 and atom.GetHybridization() == Chem.rdchem.HybridizationType.SP2:
+            return False
         degree = atom.GetDegree()
         if degree < 4:
             return True
